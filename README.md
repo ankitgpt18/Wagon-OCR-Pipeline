@@ -1,85 +1,49 @@
-# CRIS Indian Railways Wagon OCR & Stencil Audit Pipeline
+# CRIS Indian Railways Wagon OCR and Stencil Audit Pipeline
 
-This is the production-grade Wagon OCR and safety stencil audit pipeline designed for Indian Railways (CRIS). It localizes and extracts wagon parameters (wagon number, type, owner, zone, tare details) from high-resolution raw images and classifies safety stencil presence.
+This codebase runs the production-grade Wagon OCR and safety stencil audit pipeline designed for Indian Railways (CRIS). It localizes and extracts wagon details like wagon number, type, owner, zone, and tare details from high-resolution raw images. It also checks if safety stencils are present.
 
----
+## Project Structure
 
-## 📂 Project Structure
+*   cris_ocr_pipeline/ - Backend files
+    *   scripts/ocr_pipeline.py - Core OCR pipeline with 5-tier fallback logic
+    *   scripts/ocr_service.py - GPU PaddleOCR microservice (runs on port 8001)
+    *   scripts/server.py - FastAPI server connecting frontend to backend (runs on port 8000)
+    *   models/ - Custom YOLO models (best.pt for parameters and stencil_best.pt for stencils)
+    *   config/pipeline_config.json - Master registry config for checksum validation
+*   frontend/ - Vite and React web app dashboard (runs on port 5173)
+*   yolov11m.ipynb - Kaggle notebook used to train the custom 5-class localization model
+*   raw_images/ - Empty folder for raw test images
+*   .agents/ - Context and rules for AI coding assistants
 
-*   `cris_ocr_pipeline/` - Production OCR pipeline backend:
-    *   `scripts/ocr_pipeline.py` - Core OCR execution pipeline with 5-tier fallback.
-    *   `scripts/ocr_service.py` - Pre-warmed GPU PaddleOCR API microservice (runs on port 8001).
-    *   `scripts/server.py` - FastAPI backend server connecting frontend to backend OCR (runs on port 8000).
-    *   `models/` - Bounding box YOLO detection models (`best.pt` for parameters, `stencil_best.pt` for safety stencils).
-    *   `config/pipeline_config.json` - Target matrices and master registry for cross-validation.
-*   `frontend/` - Vite + React frontend dashboard web app (runs on port 5173).
-*   `yolov11m.ipynb` - Kaggle Jupyter Notebook used to train the custom 5-class localization model.
-*   `raw_images/` - Directory for original raw wagon images.
-*   `.agents/` - Custom context and operating rules for AI coding agents.
+## Quick Setup and Dependencies
 
----
+Follow these steps to get everything running on your local machine:
 
-## ⚙️ Quick Setup & Dependencies
+1. Install Python packages:
+   pip install -r requirements.txt
 
-To make sure that any developer or AI agent can run the code without path or import errors, follow these steps:
+2. Configure Python Path:
+   We have added a .env file and .vscode/settings.json to configure PYTHONPATH automatically in VS Code. If you are using a standard command prompt outside VS Code, set it manually before running the scripts:
+   - Windows PowerShell: $env:PYTHONPATH=".;cris_ocr_pipeline/scripts"
+   - Windows CMD: set PYTHONPATH=.;cris_ocr_pipeline/scripts
+   - Linux/Mac Bash: export PYTHONPATH=".:cris_ocr_pipeline/scripts"
 
-### 1. Python Environment Setup
-Install the Python packages:
-```bash
-pip install -r requirements.txt
-```
+3. Put Test Images:
+   The massive 21k raw images folder has been cleared to keep the repository size small. Download the images from Google Drive and paste them directly into the "raw_images" folder in the project root.
 
-### 2. Configure Python Path
-To prevent `ModuleNotFoundError` when importing files from subdirectory trees:
-*   We have placed a `.env` file at the root containing the portable relative `PYTHONPATH`.
-*   A `.vscode/settings.json` file is configured so VS Code terminals and PyLance IntelliSense load the relative paths automatically.
-*   **If running outside VS Code (standard terminal)**, run this command from the project root:
-    *   **PowerShell**: `$env:PYTHONPATH=".;cris_ocr_pipeline/scripts"`
-    *   **CMD**: `set PYTHONPATH=.;cris_ocr_pipeline/scripts`
-    *   **Bash**: `export PYTHONPATH=".:cris_ocr_pipeline/scripts"`
+## Running the Application
 
-### 3. Image Dataset
-To keep the zip archive clean and small, the massive 21k raw images folder has been cleared. Place any raw wagon images you want to test in the `raw_images/` directory in the root of this workspace.
+To start the system, double-click the batch files at the root of the project:
 
----
+1. Run setup.bat first:
+   This will install all required Python modules and frontend node packages with a single click.
 
-## 🚀 How to Run the System
+2. Run run_project.bat:
+   This will start the PaddleOCR service on port 8001, boot the FastAPI backend on port 8000, and launch the React frontend dashboard on port 5173. The dashboard will open in your browser automatically.
 
-To start the OCR backend and web interface, execute these commands in order:
+## Collaboration Workflow
 
-### Step 1: Start the OCR GPU Microservice
-This microservice pre-warms the GPU text recognition models to prevent CUDA memory thrashing.
-```bash
-python cris_ocr_pipeline/scripts/ocr_service.py
-```
-*   Runs on `http://127.0.0.1:8001`
-*   *Note*: The service automatically disables oneDNN (MKLDNN) to prevent library thread crashes on Windows environments.
-
-### Step 2: Start the FastAPI Backend Server
-```bash
-python start_server.py
-```
-*   Runs on `http://127.0.0.1:8000`
-*   Handles upload logic, runs YOLO localization, calls the OCR service, executes Mod-10 checksum validation, and looks up registries.
-
-### Step 3: Run the Frontend React App
-Open a new terminal and navigate to the frontend directory:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-*   Runs on `http://localhost:5173`
-
----
-
-## 🤖 AI Agent Integration
-If you or your teammates use AI coding agents (such as Gemini, Claude, or other assistants), the project-scoped rules are rootly integrated. The `.agents/AGENTS.md` file contains complete context, architectural flows, and database models. When an agent opens this directory, it will automatically discover these guidelines and align with the codebase design system.
-
----
-
-## 📦 Zip & Share Guidelines
-When zipping this project folder to share with teammates:
-1.  Keep `raw_images/` empty (they can drop their test images there).
-2.  Delete `node_modules` inside the `frontend/` directory (it will be re-created via `npm install`).
-3.  Exclude any `.git` folder or python `__pycache__` directories.
+To contribute code:
+1. Always create a new branch for your task (e.g. git checkout -b feature/your-task).
+2. Commit and push your changes to your branch, then create a Pull Request on GitHub.
+3. Keep raw images only in your local folder. Do not add them to git.
