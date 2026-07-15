@@ -38,3 +38,6 @@ scratch/
 # Local OS files
 .DS_Store
 Thumbs.db
+
+# Personal Technical Report
+technical_report.tex
