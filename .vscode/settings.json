@@ -1,0 +1,16 @@
+{
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/cris_ocr_pipeline/scripts"
+    ],
+    "terminal.integrated.env.windows": {
+        "PYTHONPATH": ".;..;../..;cris_ocr_pipeline/scripts;../cris_ocr_pipeline/scripts;../../cris_ocr_pipeline/scripts"
+    },
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": ".:..:../..:cris_ocr_pipeline/scripts:../cris_ocr_pipeline/scripts:../../cris_ocr_pipeline/scripts"
+    },
+    "terminal.integrated.env.osx": {
+        "PYTHONPATH": ".:..:../..:cris_ocr_pipeline/scripts:../cris_ocr_pipeline/scripts:../../cris_ocr_pipeline/scripts"
+    }
+}

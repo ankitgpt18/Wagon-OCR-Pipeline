@@ -1,0 +1,40 @@
+# Python Virtual Environments & Caches
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Node / Frontend dependencies & builds
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+
+# Local Dataset & Media (Stored on Google Drive)
+# Ignore all files inside raw_images except the .gitkeep placeholder
+raw_images/*
+!raw_images/.gitkeep
+
+# OCR Pipeline Local Runs & Outputs
+runs/
+cris_ocr_pipeline/outputs/
+benchmark_pipeline_outputs/
+hard_pipeline_outputs/
+temp_out/
+doc_assets/
+doc_assets_all_cases/
+doc_assets_mentor/
+*.docx
+*.pdf
+
+# Temporary files & Scratch folders
+scratch/
+.tempmediaStorage/
+*checkpoint*
+
+# Local OS files
+.DS_Store
+Thumbs.db

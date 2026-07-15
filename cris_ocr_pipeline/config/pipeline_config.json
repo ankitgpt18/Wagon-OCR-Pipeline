@@ -1,0 +1,34 @@
+{
+  "project": "cris_wagon_ocr",
+  "roboflow_model_id": "wagon-ocr/3",
+  "image_extensions": [".jpg", ".jpeg", ".png"],
+  "filename_pattern": "^(pro_)?(?P<image_id>\\d+)_(?P<wagon_or_ref_no>\\d+)_(?P<timestamp>\\d{17})\\.(jpg|jpeg|png)$",
+  "timestamp_format": "%d%m%Y%H%M%S%f",
+  "annotation_format": {
+    "type": "csv",
+    "required_columns": ["image", "x1", "y1", "x2", "y2", "x3", "y3", "x4", "y4", "text", "label"]
+  },
+  "labels": [
+    "owner_name",
+    "tare_load_details",
+    "wagon_number",
+    "wagon_type",
+    "zone_markings"
+  ],
+  "splits": {
+    "train": 0.8,
+    "val": 0.1,
+    "test": 0.1,
+    "group_by": "image_id"
+  },
+  "quality_thresholds": {
+    "min_file_size_bytes": 4096,
+    "min_width": 200,
+    "min_height": 200
+  },
+  "recommended_model": {
+    "ocr": "PaddleOCR PP-OCRv5",
+    "license_reason": "Apache-2.0 style open-source stack is better suited for production/government use than AGPL defaults."
+  }
+}
+

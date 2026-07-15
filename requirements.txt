@@ -1,0 +1,25 @@
+# CRIS Wagon OCR Project Dependencies
+
+# Core Utilities
+numpy>=1.24.0
+pillow>=10.0.0
+requests
+tqdm
+
+# Roboflow & Auto-Distill (Detection Stack)
+roboflow>=1.0.0
+inference-sdk>=1.0.0
+autodistill>=0.1.29
+autodistill-grounding-dino>=0.1.4
+supervision>=0.18.0
+opencv-python>=4.0.0
+
+# OCR Stack (PaddleOCR & EasyOCR)
+paddleocr>=2.7.0
+paddlepaddle>=2.5.0
+easyocr>=1.7.2
+
+# FastAPI Web Server (server.py)
+fastapi>=0.100.0
+uvicorn>=0.20.0
+pydantic>=2.0.0

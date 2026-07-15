@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --bg-color: #08080C;
+  --text-color: #F8FAFC;
+  --panel-bg: rgba(13, 13, 20, 0.75);
+  --border-color: rgba(255, 255, 255, 0.05);
+  --card-bg: rgba(22, 22, 33, 0.4);
+  --item-bg: rgba(15, 23, 42, 0.6);
+  --text-muted: #94A3B8;
+  --text-dim: #64748B;
+  --hover-bg: rgba(255, 255, 255, 0.03);
+}
+
+.light-theme {
+  --bg-color: #F8FAFC;
+  --text-color: #0F172A;
+  --panel-bg: rgba(255, 255, 255, 0.85);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --item-bg: rgba(241, 245, 249, 0.8);
+  --text-muted: #475569;
+  --text-dim: #64748B;
+  --hover-bg: rgba(0, 0, 0, 0.02);
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+/* Glassmorphism custom classes */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+}
+
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 0 25px rgba(139, 92, 246, 0.08);
+}
+
+/* Animation utilities */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.1); }
+  50% { box-shadow: 0 0 25px rgba(139, 92, 246, 0.25); }
+}
+
+.glow-purple {
+  animation: pulseGlow 3s infinite;
+}
