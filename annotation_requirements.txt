@@ -1,0 +1,6 @@
+# Dependencies for Roboflow & Auto-Distill Annotation (Optional)
+roboflow>=1.0.0
+inference-sdk>=1.0.0
+autodistill>=0.1.29
+autodistill-grounding-dino>=0.1.4
+supervision>=0.18.0
