@@ -30,6 +30,7 @@ doc_assets_all_cases/
 doc_assets_mentor/
 *.docx
 *.pdf
+*.png
 
 # Temporary files & Scratch folders
 scratch/
