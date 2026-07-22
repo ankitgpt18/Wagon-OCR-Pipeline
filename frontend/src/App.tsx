@@ -21,6 +21,8 @@ import {
   Save,
   Edit2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Trash2,
   RotateCcw
 } from "lucide-react";
@@ -35,6 +37,7 @@ interface WagonRecord {
   zone_markings: string;
   tare_load_details: string;
   processing_time_sec: number;
+  chunk?: string;
   error?: string;
   original_url?: string;
   annotated_url?: string;
@@ -110,6 +113,22 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to fetch master CSV entries", err);
+    }
+  };
+
+  // Fetch Available Batch Chunks
+  const [allChunksList, setAllChunksList] = useState<Array<{ name: string; count: number }>>([]);
+  const fetchChunks = async () => {
+    try {
+      const res = await fetch(`${backendUrl}/api/chunks`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.chunks && Array.isArray(data.chunks)) {
+          setAllChunksList(data.chunks);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch available chunks", err);
     }
   };
   
@@ -227,11 +246,13 @@ export default function App() {
 
   useEffect(() => {
     fetchMasters();
+    fetchChunks();
     fetchManifest();
     fetchStats();
 
     if (!enablePolling) return;
     const interval = setInterval(() => {
+      fetchChunks();
       fetchManifest();
       fetchStats();
     }, pollingInterval * 1000);
@@ -529,16 +550,16 @@ export default function App() {
   // Dynamic active batch chunk names
   const availableChunks = Array.from(new Set(records.map(r => r.chunk).filter(Boolean))) as string[];
 
-  const uniqueWagonTypes = Array.from(new Set([
-    ...masterWagonTypes,
-    ...records.map((r) => r.wagon_type).filter(Boolean)
-  ])).filter(Boolean).sort();
+  const CSV_WAGON_TYPES = [
+    "ACT1", "ACT2A", "ACT2B", "ACT2C", "BAFRDR", "BC", "BCACBM", "BCACBMA", "BCACBMB", "BCATIC", "BCBFG", "BCCN", "BCCNR", "BCCW", "BCDS", "BCFC", "BCFCM", "BCFCM1", "BCL", "BCLA", "BCLH", "BCLHA", "BCLHTC", "BCN", "BCNA", "BCNAHS", "BCNAHSM1", "BCNAM1", "BCNHL", "BCNHS", "BCNHSM1", "BCNHSM2", "BCNM1", "BCNM2", "BCX", "BCXC", "BCXR", "BCXT", "BFAT", "BFKHN", "BFKN", "BFNS", "BFNS22.9", "BFNSM1", "BFNV", "BFR", "BFU", "BFWP", "BKC", "BKU", "BKW", "BLCA", "BLCAM", "BLCB", "BLCBM", "BLCSA", "BLCSB", "BLLA", "BLLB", "BLLMA", "BLLMB", "BLSSA", "BLSSB", "BOB", "BOBR", "BOBRAL", "BOBRM1", "BOBRN", "BOBRNAHSM1", "BOBRNEL", "BOBRNHS", "BOBRNHSM1", "BOBRNHSM2", "BOBRNM1", "BOBRNM2", "BOBS", "BOBSN", "BOBSNM1", "BOBSNS", "BOBY", "BOBYN", "BOBYN22.9", "BOBYNHS", "BOBYNHSM1", "BOBYNM1", "BOMN", "BOSM", "BOST", "BOSTHS", "BOSTHSM1", "BOSTHSM2", "BOSTHSM3", "BOSTM1", "BOXN", "BOXNAL", "BOXNB", "BOXNCR", "BOXNCREL", "BOXNCRHS", "BOXNCRM1", "BOXNEL", "BOXNF", "BOXNG", "BOXNHA", "BOXNHAM", "BOXNHL", "BOXNHL25T", "BOXNHS", "BOXNHSM1", "BOXNHSM2", "BOXNLW", "BOXNLWM1", "BOXNLWM2", "BOXNM1", "BOXNM2", "BOXNR", "BOXNRHS", "BOXNRHSM1", "BOXNRM1", "BOXNRM2", "BOXNS", "BOXNUG", "BOXR", "BOY", "BOYEL", "BRH", "BRHC", "BRHN", "BRHNEHS", "BRHNEHSM1", "BRHT", "BRM", "BRN", "BRN22.9", "BRN22.9M1", "BRNA", "BRNAHA", "BRNAHS", "BRNAHSHA", "BRNAM1", "BRNHA", "BRNM1", "BRS", "BRST", "BRSTH", "BRSTN", "BTAL", "BTALN", "BTALNM", "BTALNM1", "BTAP", "BTAPM1", "BTCS", "BTFC", "BTFLN", "BTPG", "BTPGL", "BTPGLN", "BTPH", "BTPN", "BTPNHS", "BTPNM1", "BV", "BVCM", "BVG", "BVGC", "BVGT", "BVZC", "BVZI", "BWBL", "BWT", "BWTA", "BWTB", "CF", "CMP", "CRT", "DBKM", "DWT", "FLATCOIL3", "FMPA", "FMPB", "MBFU", "MBKM", "MBOXN", "MBWC", "MBWT", "NMG", "OTHERS", "RHB", "RHV", "RORO", "TEST", "TG", "TK", "TL", "TM", "TOH", "TOHC", "TOHT", "TORH", "TORHC", "TORX", "TORXC", "TP", "TPGL", "TPGLR", "TRANSPORT", "WGML"
+  ];
 
-  const uniqueZones = Array.from(new Set([
-    ...masterOwnerNames,
-    ...records.map((r) => r.zone_markings).filter(Boolean),
-    ...records.map((r) => r.owner_name).filter(Boolean)
-  ])).filter(Boolean).sort();
+  const CSV_OWNER_NAMES = [
+    "AAIL", "ACC", "ACL", "ACT1", "ADAL", "ADIL", "ADPL", "ADRA", "ALVA", "AMBC", "AMGM", "ANSL", "AP", "APPL", "APPR", "APRL", "ARIL", "ASPL", "BALC", "BCSW", "BHEL", "BLCO", "BLS", "BPCL", "BPHT", "BPT", "BR", "BRVO", "BXTS", "CCEP", "CENT", "CF", "CIMP", "CKIL", "CMP", "CNCR", "CPT", "CR", "CRRP", "CSP", "CWC", "DAS", "DEF", "DFCC", "DLI", "DLW", "DPW", "DPWM", "DWML", "ECR", "ECoR", "EL", "EMCE", "ER", "ETAP", "FCI", "FIEP", "FIPV", "FMPA", "FMPB", "GALI", "GASS", "GFCL", "GIL", "GIPL", "GL", "GMRK", "GNFC", "GRAS", "GRFL", "GRPL", "GSEC", "GSFC", "GTEC", "GVKP", "HEIL", "HFCL", "HIL", "HPC", "HPCS", "HTPL", "ICTI", "IFFC", "IILP", "INDB", "IOC", "IRCN", "IVCL", "JISL", "JKCW", "JKTI", "JMBX", "JPLP", "JRP", "JSG", "JSLI", "JSMR", "JSPL", "JSRL", "JSW", "KAML", "KASW", "KBCT", "KC", "KFCL", "KLSR", "KML", "KR", "KRIL", "LAT", "LGRL", "LIL", "MBFU", "MBKM", "MBWC", "MBWT", "MC", "MIEL", "MODI", "MPEB", "MSIL", "MSPG", "MZCY", "NA", "NALC", "NC", "NCR", "NDDB", "NEO", "NER", "NFL", "NFR", "NIP", "NMFS", "NOMA", "NPSL", "NPLR", "NR", "NTPC", "NTPU", "NWR", "OASL", "OCL", "OCLI", "OIL", "OMPL", "OPVT", "ORSM", "PIPA", "PMLP", "PR", "PRC", "PRYG", "PTAL", "RAGA", "RAIC", "RB", "RC", "RHB", "RHV", "RML", "RMS", "RMTI", "RORO", "RRVU", "RS", "RSMM", "RSPL", "RTPV", "RVNL", "SAIL", "SAKM", "SCAL", "SCR", "SECR", "SEL", "SELC", "SER", "SFA", "SHLA", "SMEL", "SML", "SMNL", "SR", "SSPL", "SSLJ", "SUPR", "SWR", "TATA", "TCFS", "TCI", "THDC", "TISC", "TK", "TL", "TM", "TMIT", "TOH", "TOHC", "TOHT", "TORH", "TORHC", "TORX", "TORXC", "TP", "TPGL", "TPGLR", "TRAC", "TRLS", "TRSD", "TTRL", "TWL", "UAIL", "UTCL", "VAC", "VL", "WB", "WCR", "WGML", "WR"
+  ];
+
+  const uniqueWagonTypes = masterWagonTypes.length > 0 ? masterWagonTypes : CSV_WAGON_TYPES;
+  const uniqueZones = masterOwnerNames.length > 0 ? masterOwnerNames : CSV_OWNER_NAMES;
 
   // Default Stats fallback (defaults to all zero elements if selectedChunk === 'none')
   const displayStats: AnalyticsStats = selectedChunk === "none" ? {
@@ -1093,6 +1114,7 @@ export default function App() {
                       <tr className={`text-[10px] uppercase tracking-wider font-mono border-b ${
                         isLight ? "bg-slate-100 border-slate-200 text-slate-500" : "bg-slate-955/80 border-slate-800 text-slate-400"
                       }`}>
+                        <th className="px-4 py-4 w-12 text-center">S.No</th>
                         <th className="px-6 py-4">Image Name</th>
                         <th className="px-6 py-4">Wagon Code</th>
                         <th className="px-6 py-4">Wagon Type</th>
@@ -1112,6 +1134,9 @@ export default function App() {
                       ) : (
                         paginatedRecords.map((r, i) => (
                           <tr key={i} className="hover:bg-slate-900/10 transition duration-150">
+                            <td className="px-4 py-4 font-mono font-bold text-slate-500 text-center text-xs">
+                              {(currentPage - 1) * itemsPerPage + i + 1}
+                            </td>
                             <td className="px-6 py-4 font-semibold text-slate-400 max-w-[150px] truncate">{r.image_name}</td>
                             <td className="px-6 py-4 font-mono font-bold text-sky-400">
                               <span className="flex items-center space-x-1">
@@ -1162,40 +1187,41 @@ export default function App() {
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
                   <div className={`px-6 py-4 flex items-center justify-between border-t text-xs font-semibold text-slate-500 font-mono ${
-                    isLight ? "bg-slate-50/50 border-slate-202" : "bg-slate-950/20 border-slate-800/80"
+                    isLight ? "bg-slate-50/50 border-slate-202" : "bg-slate-955/20 border-slate-800/80"
                   }`}>
                     <div>
                       Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredRecords.length)} of {filteredRecords.length} records
                     </div>
-                    <div className="flex space-x-2">
+                    <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                         disabled={currentPage === 1}
-                        className={`px-3 py-1.5 rounded-lg border font-bold disabled:opacity-40 transition ${
+                        className={`px-3 py-1.5 rounded-lg border font-bold disabled:opacity-40 transition flex items-center space-x-1 ${
                           isLight 
                             ? "bg-white border-slate-202 hover:bg-slate-100 text-slate-600" 
                             : "bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300"
                         }`}
                       >
-                        Previous
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        <span>Previous</span>
                       </button>
-                      <span className="px-3 py-1.5 text-slate-450">Page {currentPage} of {totalPages}</span>
+                      <span className="px-3 py-1.5 text-slate-450 font-bold">Page {currentPage} of {totalPages}</span>
                       <button
                         onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                         disabled={currentPage === totalPages}
-                        className={`px-3 py-1.5 rounded-lg border font-bold disabled:opacity-40 transition ${
+                        className={`px-3 py-1.5 rounded-lg border font-bold disabled:opacity-40 transition flex items-center space-x-1 ${
                           isLight 
                             ? "bg-white border-slate-202 hover:bg-slate-100 text-slate-600" 
                             : "bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300"
                         }`}
                       >
-                        Next
+                        <span>Next</span>
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
                 )}
               </div>
-
             </div>
           )}
 
@@ -1432,122 +1458,56 @@ export default function App() {
 
               </div>
 
-              {/* Descending list visual lists for Zones & Owners to avoid messy pie charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
-                {/* 3. Top Zones Progress Bars */}
-                <div className="glass-panel p-8 rounded-3xl">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 font-mono">
-                    Top Owning Railway Zones
-                  </h3>
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
-                    {(() => {
-                      const sortedZones = [...displayStats.zoneMarkings].sort((a, b) => b.value - a.value);
-                      const totalZones = sortedZones.reduce((sum, item) => sum + item.value, 0);
+              {/* Top Legal Wagon Asset Owners Progress Bars */}
+              <div className="glass-panel p-8 rounded-3xl">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 font-mono">
+                  Top Legal Wagon Asset Owners
+                </h3>
+                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                  {records.length === 0 ? (
+                    <div className="text-center py-10 text-slate-500 text-sm">No records analyzed</div>
+                  ) : (
+                    (() => {
+                      const ownersMap: { [key: string]: number } = {};
+                      records.forEach(r => {
+                        if (r.owner_name) {
+                          ownersMap[r.owner_name] = (ownersMap[r.owner_name] || 0) + 1;
+                        }
+                      });
+                      const sortedOwners = Object.entries(ownersMap)
+                        .map(([name, value]) => ({ name, value }))
+                        .sort((a, b) => b.value - a.value);
                       
-                      if (sortedZones.length === 0) {
-                        return <div className="text-center py-10 text-slate-500 text-sm">No markings captured</div>;
+                      const totalOwners = sortedOwners.reduce((sum, item) => sum + item.value, 0);
+                      const displayedOwners = sortedOwners.slice(0, 10);
+
+                      if (displayedOwners.length === 0) {
+                        return <div className="text-center py-10 text-slate-500 text-sm">No owners extracted</div>;
                       }
-                      
-                      return sortedZones.map((item, idx) => {
-                        const percent = totalZones ? ((item.value / totalZones) * 100).toFixed(1) : "0.0";
+
+                      return displayedOwners.map((item, idx) => {
+                        const percent = totalOwners ? ((item.value / totalOwners) * 100).toFixed(1) : "0.0";
                         return (
                           <div key={idx} className="space-y-1">
                             <div className="flex justify-between items-center text-xs">
                               <span className="font-bold font-mono">{item.name}</span>
-                              <span className="text-slate-400 font-mono">{item.value} wagons ({percent}%)</span>
+                              <span className="text-slate-405 font-mono">{item.value} wagons ({percent}%)</span>
                             </div>
-                            <div className={`h-2 rounded-full w-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}>
+                            <div className={`h-2 rounded-full w-full ${isLight ? "bg-slate-202" : "bg-slate-800"}`}>
                               <div 
-                                className="h-full rounded-full bg-gradient-to-r from-accentPurple to-accentCyan" 
+                                className="h-full rounded-full bg-gradient-to-r from-accentCyan to-teal-400" 
                                 style={{ width: `${percent}%` }}
                               ></div>
                             </div>
                           </div>
                         );
                       });
-                    })()}
-                  </div>
-                </div>
-
-                {/* 4. Top Owners Progress Bars */}
-                <div className="glass-panel p-8 rounded-3xl">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 font-mono">
-                    Top Legal Wagon Asset Owners
-                  </h3>
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
-                    {records.length === 0 ? (
-                      <div className="text-center py-10 text-slate-500 text-sm">No records analyzed</div>
-                    ) : (
-                      (() => {
-                        const ownersMap: { [key: string]: number } = {};
-                        records.forEach(r => {
-                          if (r.owner_name) {
-                            ownersMap[r.owner_name] = (ownersMap[r.owner_name] || 0) + 1;
-                          }
-                        });
-                        const sortedOwners = Object.entries(ownersMap)
-                          .map(([name, value]) => ({ name, value }))
-                          .sort((a, b) => b.value - a.value);
-                        
-                        const totalOwners = sortedOwners.reduce((sum, item) => sum + item.value, 0);
-                        const displayedOwners = sortedOwners.slice(0, 7);
-
-                        if (displayedOwners.length === 0) {
-                          return <div className="text-center py-10 text-slate-500 text-sm">No owners extracted</div>;
-                        }
-
-                        return displayedOwners.map((item, idx) => {
-                          const percent = totalOwners ? ((item.value / totalOwners) * 100).toFixed(1) : "0.0";
-                          return (
-                            <div key={idx} className="space-y-1">
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="font-bold font-mono">{item.name}</span>
-                                <span className="text-slate-405 font-mono">{item.value} wagons ({percent}%)</span>
-                              </div>
-                              <div className={`h-2 rounded-full w-full ${isLight ? "bg-slate-202" : "bg-slate-800"}`}>
-                                <div 
-                                  className="h-full rounded-full bg-gradient-to-r from-accentCyan to-teal-400" 
-                                  style={{ width: `${percent}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          );
-                        });
-                      })()
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* 5. Tare details & carrying capacity extraction health grid */}
-              <div className="glass-panel p-8 rounded-3xl">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 font-mono">
-                  Tare & Carrying Capacity Extraction Health (Category 5)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                  <div className={`p-6 rounded-2xl border ${isLight ? "bg-slate-100 border-slate-200" : "bg-slate-900/50 border-slate-800/80"}`}>
-                    <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">Tare Clean Reads</span>
-                    <div className="text-3xl font-extrabold text-slate-100 mt-2">{tareVerificationCount}</div>
-                    <p className="text-[11px] text-slate-500 mt-1">Wagons with validated empty weight</p>
-                  </div>
-                  
-                  <div className={`p-6 rounded-2xl border ${isLight ? "bg-slate-100 border-slate-200" : "bg-slate-900/50 border-slate-800/80"}`}>
-                    <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">CC Clean Reads</span>
-                    <div className="text-3xl font-extrabold text-slate-100 mt-2">{ccVerificationCount}</div>
-                    <p className="text-[11px] text-slate-500 mt-1">Wagons with verified carrying capacity</p>
-                  </div>
-
-                  <div className={`p-6 rounded-2xl border ${isLight ? "bg-slate-100 border-slate-200" : "bg-slate-900/50 border-slate-800/80"}`}>
-                    <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">Unread / Noisy Fields</span>
-                    <div className="text-3xl font-extrabold text-rose-500 mt-2">
-                      {records.length - Math.max(tareVerificationCount, ccVerificationCount)}
-                    </div>
-                    <p className="text-[11px] text-slate-550 mt-1">OCR noise discarded for database purity</p>
-                  </div>
+                    })()
+                  )}
                 </div>
               </div>
+
+
 
             </div>
           )}

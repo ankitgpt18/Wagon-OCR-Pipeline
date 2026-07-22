@@ -22,11 +22,11 @@ This system is a production-grade Wagon OCR and Stencil audit pipeline designed 
 
 ### 2. Multi-Tier OCR Ensemble Strategy
 To handle extreme rust, weathered paint, and text degradation, the pipeline executes a 5-tier fallback flow:
-*   **Tier 1**: PaddleOCR on preprocessed crop (deskewed + contrast-boosted with LAB CLAHE + resized to 80px target height).
-*   **Tier 2**: PaddleOCR on raw crop (adds adaptive margins from original YOLO bounding box).
-*   **Tier 3**: EasyOCR on raw crop (handles minor character gaps where PaddleOCR fails).
-*   **Tier 4**: Tesseract OCR (uses whitelisted character maps: `0-9` for numbers, `A-Z` for names, `psm 7` word segmentation).
-*   **Tier 5 (Fallback)**: Full Image Scan. If YOLO fails to localize or the crop is unreadable, PaddleOCR scans the entire frame to recover the 11-digit wagon number pattern.
+*   **Tier 1**: Qwen2.5-VL Vision-Language Model OCR on crops (supports bilingual English + Devanagari Hindi, split layout reading, and full code suffixes).
+*   **Tier 2**: PaddleOCR on preprocessed crop (deskewed + contrast-boosted with LAB CLAHE + resized to 80px target height).
+*   **Tier 3**: PaddleOCR on raw BGR crop (uses original bounding box coordinates).
+*   **Tier 4**: Bounding Box Margin Iteration (adaptive 5%, 10%, 15% padding expansion for cut-off edge characters).
+*   **Tier 5**: Full Image Scan (scans entire frame with PaddleOCR to recover 11-digit wagon numbers when crops are missed).
 
 ### 3. Checksum & Cross-Validation Logic
 *   **S4 Mod-10 Checksum**: Matches Indian Railways standard for 11-digit wagon numbers.

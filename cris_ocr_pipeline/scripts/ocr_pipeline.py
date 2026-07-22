@@ -8,23 +8,32 @@ Combines:
 4. Combinatorial OCR error correction & 11-digit checksum validation
 5. Owning Railway (Zone) cross-verification
 """
-import argparse
-import csv
-import glob
-import json
 import os
-import re
-import time
-from itertools import product
 from pathlib import Path
-
-import cv2
-import numpy as np
-
-# Automatically add NVIDIA CUDA DLL search directories on Windows to resolve library loader errors
+# CRITICAL: Pre-load PyTorch C++ DLLs on Windows using ctypes to prevent WinError 127 shm.dll loader error
 if os.name == "nt":
+    import ctypes
     import site
+    t_lib = r"C:\Users\ankit\AppData\Roaming\Python\Python311\site-packages\torch\lib"
+    if os.path.exists(t_lib):
+        try:
+            os.add_dll_directory(t_lib)
+            for dll_name in ["c10.dll", "torch_cpu.dll", "shm.dll"]:
+                dll_p = os.path.join(t_lib, dll_name)
+                if os.path.exists(dll_p):
+                    try:
+                        ctypes.CDLL(dll_p)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     for sp in site.getsitepackages() + [site.getusersitepackages()]:
+        torch_lib = Path(sp) / "torch" / "lib"
+        if torch_lib.exists():
+            try:
+                os.add_dll_directory(str(torch_lib))
+            except Exception:
+                pass
         nvidia_path = Path(sp) / "nvidia"
         if nvidia_path.exists():
             for p in nvidia_path.rglob("bin"):
@@ -32,6 +41,18 @@ if os.name == "nt":
                     os.add_dll_directory(str(p))
                 except Exception:
                     pass
+
+import argparse
+import csv
+import glob
+import json
+import re
+import time
+from itertools import product
+from pathlib import Path
+
+import cv2
+import numpy as np
 
 from paddleocr import PaddleOCR
 from PIL import Image
@@ -130,6 +151,7 @@ if not VALID_OWNER_NAMES:
     }
     for item in VALID_OWNER_NAMES:
         OWNER_MAP[item] = item
+        OWNER_MAP[item.upper()] = item
 
 
 # OCR Confusion candidates mapping
@@ -539,79 +561,93 @@ DEVANAGARI_OWNER_TYPES = {
     "मरे": "CR",
 }
 
-def format_num_2dec(val_str):
+def format_num_2dec(val_str, param_type="TARE"):
     try:
-        # Convert Hindi digits if present
         val_str = val_str.translate(HINDI_DIGITS_MAP)
-        # Fix dash in decimal e.g. 71-15 -> 71.15
         val_str = val_str.replace("-", ".")
         val = float(val_str)
+        
+        # Auto-insert decimal if OCR missed dot e.g. 2050 -> 20.50, 7080 -> 70.80, 3032 -> 30.32
+        if param_type == "TARE" and val > 100:
+            val = val / 100.0
+        elif param_type == "CC" and val > 200:
+            val = val / 100.0
+        elif param_type == "AREA" and val > 100:
+            val = val / 10.0 if val < 1000 else val / 100.0
+            
+        # Physical boundary checks for heavy haul wagons
+        if param_type == "TARE" and not (10.0 <= val <= 45.0):
+            return None
+        if param_type == "CC" and not (40.0 <= val <= 100.0):
+            return None
+        if param_type == "AREA" and not (10.0 <= val <= 70.0):
+            return None
+
         return f"{val:.2f}"
     except Exception:
-        return val_str
+        return None
 
 
 def verify_and_clean_tare_details(ocr_text, wagon_type):
     """
     Cleans up OCR-read tare details text in both English and Devanagari/Hindi.
-    Recognizes:
-      - English: TARE, CC, CARRYING CAPACITY, CAPACITY, AREA keywords
-      - Hindi: टेयर (Tare), क्षमता / वा. क्ष. (CC/Capacity), क्षेत्रफल / वर्गमी / वर्ग मी (Area)
+    Enforces physical range validation (Tare: 10-45T, CC: 40-100T, Area: 10-70 sq.m).
     Formats numbers to 2 fixed decimal places.
     """
     if not ocr_text:
         return ""
 
-    # Convert Hindi digits ०-९ to 0-9
     ocr_text = ocr_text.translate(HINDI_DIGITS_MAP)
 
-    # Pre-merge space/dash split decimals in carrying capacity/tare (e.g. "71-15" -> "71.15", "20-45" -> "20.45")
     cleaned = re.sub(r"\b(\d{2})[\s\-]+(\d{1,2})\b", r"\1.\2", ocr_text.strip())
     cleaned = " ".join(cleaned.split())
 
-    # Try to extract keyword-labeled values from the text
     parts = []
 
-    # Look for TARE keyword in English (TARE) or Hindi (टेयर / टैयर / टेयर) followed by a number
-    tare_match = re.search(r"(?:TARE|टेयर|टैयर)\s*:?\s*-?\s*(\d+[\.\-]?\d*)\s*(?:T|टन)?", cleaned, re.IGNORECASE)
+    # 1. TARE
+    tare_match = re.search(r"(?:TARE|टेयर|टैयर|टेर|टैर)\s*:?\s*-?\s*(\d+[\.\-]?\d*)\s*(?:T|टन)?", cleaned, re.IGNORECASE)
     if tare_match:
-        val = format_num_2dec(tare_match.group(1))
-        parts.append(f"TARE: {val}T")
+        val = format_num_2dec(tare_match.group(1), "TARE")
+        if val:
+            parts.append(f"TARE: {val}T")
 
-    # Look for CC keyword in English (CC / CARRYING CAPACITY / CAPACITY / CAP) or Hindi (क्षमता / वा.क्ष / वा. क्ष.) followed by a number
-    cc_match = re.search(r"(?:\bCC|CARRYING\s*CAPACITY|CAPACITY|\bCAP|क्षमता|वा[\.\s]*क्ष[\.\s]*)\s*:?\s*-?\s*(\d+[\.\-]?\d*)\s*(?:T|टन)?", cleaned, re.IGNORECASE)
+    # 2. CC
+    cc_match = re.search(r"(?:\bCC|CARRYING\s*CAPACITY|CAPACITY|\bCAP|भार\s*क्षमता|वहन\s*क्षमता|क्षमता|\bभार\b|वा[\.\s]*क्ष[\.\s]*)\s*:?\s*-?\s*(\d+[\.\-]?\d*)\s*(?:T|टन)?", cleaned, re.IGNORECASE)
     if cc_match:
-        val = format_num_2dec(cc_match.group(1))
-        parts.append(f"CC: {val}T")
+        val = format_num_2dec(cc_match.group(1), "CC")
+        if val:
+            parts.append(f"CC: {val}T")
 
-    # Look for AREA keyword in English (AREA/SQM/M2) or Hindi (वर्गमी/वर्ग मी/क्षेत्रफल)
+    # 3. AREA
     area_match = re.search(
         r"(?:AREA|AR|SQM|SQ\.?M|M2|वर्ग\s*मी|वर्गमी|क्षेत्रफल)\s*:?\s*-?\s*(\d+[\.\-]?\d*)|(\d+[\.\-]?\d*)\s*(?:SQM|SQ\.?M|M2|वर्ग\s*मी|वर्गमी|क्षेत्रफल)",
         cleaned, re.IGNORECASE
     )
     if area_match:
         raw_val = area_match.group(1) or area_match.group(2)
-        val = format_num_2dec(raw_val)
-        parts.append(f"AREA: {val} sq.m")
+        val = format_num_2dec(raw_val, "AREA")
+        if val:
+            parts.append(f"AREA: {val} sq.m")
 
-    # If we found labeled values, return them structured
     if parts:
         return " / ".join(parts)
 
-    # If no valid labeled parameters found, return empty string (displayed clean as —)
     return ""
 
 
 def cross_validate_results(results):
     """
-    Cleans and verifies the OCR-read values using master lists.
-    Also parses and cleans tare details to extract CC, Tare, and Area.
-    Does NOT use the wagon number to deduce or override wagon type/zone markings.
+    Cleans and verifies OCR-read values against ROAMS master lists.
+    Enforces STRICT master registry matching — non-master noise strings are 100% prohibited.
     """
-    # 1. Clean Wagon Type (translate Devanagari Hindi text if present)
+    wnum = results.get("wagon_number", "").strip()
+    is_wnum_valid = len(wnum) == 11 and validate_wagon_number_checksum(wnum)
+    results["wagon_number_checksum_valid"] = is_wnum_valid
+    results["wagon_number_verified"] = is_wnum_valid
+
+    # 1. Clean & Validate Wagon Type against 209 ROAMS Master Types
     wtype = results.get("wagon_type", "").strip().upper()
     if wtype:
-        # Check Devanagari Hindi translation (sort by longest Hindi key first)
         sorted_hi = sorted(DEVANAGARI_WAGON_TYPES.items(), key=lambda x: len(x[0]), reverse=True)
         for hi_type, en_type in sorted_hi:
             if hi_type in wtype:
@@ -623,24 +659,37 @@ def cross_validate_results(results):
         if wtype in VALID_WAGON_TYPES:
             best_wtype = wtype
         else:
-            # Fuzzy match against VALID_WAGON_TYPES
             for vt in VALID_WAGON_TYPES:
                 dist = levenshtein_distance(wtype, vt)
                 if dist < min_dist:
                     min_dist = dist
                     best_wtype = vt
-            # Correct if close
+            # STRICT RULE: Reject raw noise if Levenshtein distance > 2!
             if min_dist > 2:
-                best_wtype = wtype # keep raw
+                best_wtype = ""
+
+        # Fallback to 11-digit wagon number prefix if raw OCR failed or was rejected
+        if not best_wtype and is_wnum_valid:
+            best_wtype = CODE_TO_WAGON_TYPE.get(wnum[:2], "")
+
         results["wagon_type"] = best_wtype
         results["wagon_type_verified"] = best_wtype in VALID_WAGON_TYPES
     else:
-        results["wagon_type_verified"] = False
+        if is_wnum_valid:
+            results["wagon_type"] = CODE_TO_WAGON_TYPE.get(wnum[:2], "")
+            results["wagon_type_verified"] = results["wagon_type"] in VALID_WAGON_TYPES
+        else:
+            results["wagon_type_verified"] = False
 
-    # 2. Clean Owner Name & Zone Markings, then merge (zone → owner)
+    # 2. Clean & Validate Owner Name (Entity: CONCOR, SAIL, IOCL, etc.)
     owner = results.get("owner_name", "").strip().upper()
+    best_owner = ""
     if owner:
-        best_owner = None
+        for hi_owner, en_owner in sorted(DEVANAGARI_OWNER_TYPES.items(), key=lambda x: len(x[0]), reverse=True):
+            if hi_owner in owner:
+                owner = en_owner
+                break
+
         min_dist = 999
         if owner in VALID_OWNER_NAMES:
             best_owner = owner
@@ -651,15 +700,19 @@ def cross_validate_results(results):
                     min_dist = dist
                     best_owner = vo
             if min_dist > 2:
-                best_owner = owner # keep raw
-        results["owner_name"] = best_owner
-        results["owner_name_verified"] = best_owner in VALID_OWNER_NAMES
-    else:
-        results["owner_name_verified"] = False
+                best_owner = ""
 
+    # Fallback to 11-digit wagon number digits 3-4 if owner OCR missed
+    if not best_owner and is_wnum_valid:
+        best_owner = ZONE_CODE_MAP.get(wnum[2:4], "")
+
+    results["owner_name"] = best_owner
+    results["owner_name_verified"] = best_owner in VALID_OWNER_NAMES
+
+    # 3. Clean & Preserve Zone Markings (Railway Zone: SECR, ECoR, NR, WR, etc.)
     zone = results.get("zone_markings", "").strip().upper()
+    best_zone = ""
     if zone:
-        best_zone = None
         min_dist = 999
         if zone in VALID_OWNER_NAMES:
             best_zone = zone
@@ -670,40 +723,21 @@ def cross_validate_results(results):
                     min_dist = dist
                     best_zone = vz
             if min_dist > 2:
-                best_zone = zone # keep raw
-    else:
-        best_zone = None
+                best_zone = ""
 
-    # 2.1 Merge zone into owner_name (owner is the major/primary field)
-    final_owner = results.get("owner_name", "") or ""
-    if best_zone and best_zone != final_owner:
-        # Combine: "OWNER / ZONE" (owner first as primary)
-        if final_owner:
-            final_owner = f"{final_owner} / {best_zone}"
-        else:
-            final_owner = best_zone
-    results["owner_name"] = final_owner
-    results["owner_name_verified"] = bool(final_owner and (
-        results.get("owner_name_verified") or (best_zone and best_zone in VALID_OWNER_NAMES)
-    ))
-    # Clear zone_markings — it's now part of owner_name
-    results["zone_markings"] = ""
-    results["zone_markings_verified"] = results["owner_name_verified"]
+    # Fallback zone from 11-digit wagon number if missing
+    if not best_zone and is_wnum_valid:
+        best_zone = ZONE_CODE_MAP.get(wnum[2:4], "")
 
-    # 3. Clean Wagon Number Checklist Verification
-    wagon_number = results.get("wagon_number", "").strip()
-    if wagon_number and len(wagon_number) == 11:
-        results["wagon_number_checksum_valid"] = validate_wagon_number_checksum(wagon_number)
-        results["wagon_number_verified"] = results["wagon_number_checksum_valid"]
-    else:
-        results["wagon_number_checksum_valid"] = False
-        results["wagon_number_verified"] = False
+    # PRESERVE zone_markings as its own distinct field for stats & database
+    results["zone_markings"] = best_zone
+    results["zone_markings_verified"] = best_zone in VALID_OWNER_NAMES
 
-    # 4. Standardize tare details, parsing CC, Tare, and Area
+    # 4. Standardize Tare Details
     tare_details = results.get("tare_load_details", "").strip()
     cleaned_tare = verify_and_clean_tare_details(tare_details, results.get("wagon_type", ""))
     results["tare_load_details"] = cleaned_tare
-    results["tare_load_details_verified"] = bool(cleaned_tare and ("TARE" in cleaned_tare.upper() or "CC" in cleaned_tare.upper()))
+    results["tare_load_details_verified"] = bool(cleaned_tare and ("TARE" in cleaned_tare.upper() or "CC" in cleaned_tare.upper() or "AREA" in cleaned_tare.upper()))
 
     return results
 
@@ -780,6 +814,31 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
 
         # Step 2: Open image & process crops
         image = Image.open(image_path).convert("RGB")
+
+        # Check if multiple wagon_type boxes exist (e.g. Box 1: BCNA, Box 2: HSM1) and merge them left-to-right
+        type_preds = [p for p in predictions if p.get("class") == "wagon_type"]
+        if len(type_preds) > 1:
+            type_preds.sort(key=lambda p: float(p.get("x", 0)))
+            x_min = min(float(p["x"]) - float(p["width"]) / 2 for p in type_preds)
+            x_max = max(float(p["x"]) + float(p["width"]) / 2 for p in type_preds)
+            y_min = min(float(p["y"]) - float(p["height"]) / 2 for p in type_preds)
+            y_max = max(float(p["y"]) + float(p["height"]) / 2 for p in type_preds)
+            
+            merged_w = x_max - x_min
+            merged_h = y_max - y_min
+            merged_x = x_min + merged_w / 2
+            merged_y = y_min + merged_h / 2
+            max_conf = max(float(p.get("confidence", 0)) for p in type_preds)
+            
+            merged_pred = {
+                "class": "wagon_type",
+                "x": merged_x,
+                "y": merged_y,
+                "width": merged_w,
+                "height": merged_h,
+                "confidence": max_conf
+            }
+            predictions = [p for p in predictions if p.get("class") != "wagon_type"] + [merged_pred]
 
         # Sort predictions so that main foreground detections (highest confidence & box area) come FIRST
         predictions.sort(
@@ -870,7 +929,17 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 if cls_name == "wagon_number":
                     return len(cleaned) == 11 and validate_wagon_number_checksum(cleaned)
                 elif cls_name == "wagon_type":
-                    return cleaned in VALID_WAGON_TYPES
+                    if cleaned not in VALID_WAGON_TYPES:
+                        return False
+                    # Family sanity check: If wagon_number is verified, ensure wagon_type matches expected family
+                    wnum = res.get("wagon_number", "")
+                    if len(wnum) == 11 and validate_wagon_number_checksum(wnum):
+                        expected_base = CODE_TO_WAGON_TYPE.get(wnum[:2], "")
+                        if expected_base:
+                            exp_prefix = expected_base[:2] # e.g. "BO" for BOXN/BOXNHL, "BC" for BCNHL, "BT" for BTPN
+                            if not cleaned.startswith(exp_prefix):
+                                return False
+                    return True
                 elif cls_name == "owner_name" or cls_name == "zone_markings":
                     return cleaned in VALID_OWNER_NAMES
                 elif cls_name == "tare_load_details":
@@ -897,17 +966,58 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 lines_data.sort(key=lambda item: (item[1], item[0]))
                 return " ".join([item[2] for item in lines_data])
 
-            # Tier 1: PaddleOCR on Preprocessed Crop
+            # Tier 1 (Primary): Qwen2.5-VL Vision-Language Model OCR for all categories
             try:
-                res_t1 = ocr_client.ocr(preprocessed_crop)
-                text_t1 = parse_paddle_lines(res_t1)
-                clean_t1 = clean_text_class(text_t1, cls_name)
-                if check_field_verification(clean_t1):
-                    processed_text = clean_t1
+                if hasattr(ocr_client, "ocr_vlm"):
+                    vlm_raw = ocr_client.ocr_vlm(crop, cls_name)
+                    if vlm_raw:
+                        vlm_clean = clean_text_class(vlm_raw, cls_name)
+                        if check_field_verification(vlm_clean):
+                            processed_text = vlm_clean
+                            print(f"Tier 1 (VLM Qwen2.5-VL Primary) resolved field: {processed_text}")
+                        elif vlm_clean:
+                            clean_t1 = vlm_clean
             except Exception as e:
-                print(f"Tier 1 PaddleOCR failed: {e}")
+                pass
 
-            # Tier 2: PaddleOCR on Raw Crop (if Tier 1 is unverified)
+            # Tier 1.5 (VLM +10% Expanded Margin Padding): Qwen2.5-VL on widened crop for edge-clipped text
+            if not processed_text:
+                try:
+                    if hasattr(ocr_client, "ocr_vlm"):
+                        width, height = pred["width"], pred["height"]
+                        pad_w = int(width * 0.10)
+                        pad_h = int(height * 0.10)
+                        
+                        x1 = max(0, int(pred["x"] - width / 2) - pad_w)
+                        y1 = max(0, int(pred["y"] - height / 2) - pad_h)
+                        x2 = min(image.width, int(pred["x"] + width / 2) + pad_w)
+                        y2 = min(image.height, int(pred["y"] + height / 2) + pad_h)
+                        
+                        crop_10 = image.crop((x1, y1, x2, y2))
+                        vlm_10_raw = ocr_client.ocr_vlm(crop_10, cls_name)
+                        if vlm_10_raw:
+                            vlm_10_clean = clean_text_class(vlm_10_raw, cls_name)
+                            if check_field_verification(vlm_10_clean):
+                                processed_text = vlm_10_clean
+                                print(f"Tier 1.5 (VLM Qwen2.5-VL +10% Expanded) resolved field: {processed_text}")
+                            elif vlm_10_clean and not clean_t1:
+                                clean_t1 = vlm_10_clean
+                except Exception as e:
+                    pass
+
+            # Tier 2: PaddleOCR on Preprocessed Crop
+            if not processed_text:
+                try:
+                    res_t1 = ocr_client.ocr(preprocessed_crop)
+                    text_t1 = parse_paddle_lines(res_t1)
+                    clean_t1 = clean_text_class(text_t1, cls_name)
+                    if check_field_verification(clean_t1):
+                        processed_text = clean_t1
+                        print(f"Tier 2 (PaddleOCR Preprocessed) resolved field: {processed_text}")
+                except Exception as e:
+                    print(f"Tier 2 PaddleOCR failed: {e}")
+
+            # Tier 3: PaddleOCR on Raw Crop (if unverified)
             if not processed_text:
                 try:
                     raw_bgr = cv2.cvtColor(np.array(crop), cv2.COLOR_RGB2BGR)
@@ -916,12 +1026,11 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                     clean_t2 = clean_text_class(text_t2, cls_name)
                     if check_field_verification(clean_t2):
                         processed_text = clean_t2
-                        print(f"Tier 2 OCR (Raw BGR) resolved field: {processed_text}")
+                        print(f"Tier 3 OCR (Raw BGR) resolved field: {processed_text}")
                     elif clean_t2 and len(clean_t2) > len(clean_t1 or ""):
-                        # Fallback candidate
                         clean_t1 = clean_t2
                 except Exception as e:
-                    print(f"Tier 2 PaddleOCR raw failed: {e}")
+                    print(f"Tier 3 PaddleOCR raw failed: {e}")
 
             # Tier 3: EasyOCR on Raw Crop (if Tier 2 is unverified and EasyOCR is installed)
             if not processed_text:
@@ -966,38 +1075,37 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 except Exception:
                     pass # Skip if not installed
 
-            # Tier 5: Bounding Box Margin Iteration (Grid Expansion Fallback)
+            # Tier 4: Bounding Box Margin Expansion Fallback (+10% Single Pass)
             if not processed_text:
-                for scale in [0.05, 0.10, 0.15]:
-                    try:
-                        width, height = pred["width"], pred["height"]
-                        aspect_ratio = width / max(height, 1)
-                        
-                        if aspect_ratio > 2.0:
-                            pad_w = int(width * (0.20 + scale))
-                            pad_h = int(height * (0.08 + scale))
-                        else:
-                            pad_w = int(width * (0.12 + scale))
-                            pad_h = int(height * (0.12 + scale))
-                        
-                        x1 = max(0, int(pred["x"] - width / 2) - pad_w)
-                        y1 = max(0, int(pred["y"] - height / 2) - pad_h)
-                        x2 = min(image.width, int(pred["x"] + width / 2) + pad_w)
-                        y2 = min(image.height, int(pred["y"] + height / 2) + pad_h)
-                        
-                        scale_crop = image.crop((x1, y1, x2, y2))
-                        scale_preprocessed = preprocess_crop(scale_crop)
-                        
-                        scale_res = ocr_client.ocr(scale_preprocessed)
-                        scale_text = parse_paddle_lines(scale_res)
-                        scale_clean = clean_text_class(scale_text, cls_name)
-                        
-                        if check_field_verification(scale_clean):
-                            processed_text = scale_clean
-                            print(f"Margin scale {scale} resolved field: {processed_text}")
-                            break
-                    except Exception as scale_err:
-                        print(f"Margin scale iteration {scale} failed: {scale_err}")
+                scale = 0.10
+                try:
+                    width, height = pred["width"], pred["height"]
+                    aspect_ratio = width / max(height, 1)
+                    
+                    if aspect_ratio > 2.0:
+                        pad_w = int(width * (0.20 + scale))
+                        pad_h = int(height * (0.08 + scale))
+                    else:
+                        pad_w = int(width * (0.12 + scale))
+                        pad_h = int(height * (0.12 + scale))
+                    
+                    x1 = max(0, int(pred["x"] - width / 2) - pad_w)
+                    y1 = max(0, int(pred["y"] - height / 2) - pad_h)
+                    x2 = min(image.width, int(pred["x"] + width / 2) + pad_w)
+                    y2 = min(image.height, int(pred["y"] + height / 2) + pad_h)
+                    
+                    scale_crop = image.crop((x1, y1, x2, y2))
+                    scale_preprocessed = preprocess_crop(scale_crop)
+                    
+                    scale_res = ocr_client.ocr(scale_preprocessed)
+                    scale_text = parse_paddle_lines(scale_res)
+                    scale_clean = clean_text_class(scale_text, cls_name)
+                    
+                    if check_field_verification(scale_clean):
+                        processed_text = scale_clean
+                        print(f"Tier 4 Margin +10% expansion resolved field: {processed_text}")
+                except Exception as scale_err:
+                    print(f"Tier 4 Margin +10% expansion failed: {scale_err}")
 
             # Fallback if no verified candidate found: use the best raw prediction and clean it
             if not processed_text:
