@@ -10,37 +10,9 @@ Combines:
 """
 import os
 from pathlib import Path
-# CRITICAL: Pre-load PyTorch C++ DLLs on Windows using ctypes to prevent WinError 127 shm.dll loader error
-if os.name == "nt":
-    import ctypes
-    import site
-    t_lib = r"C:\Users\ankit\AppData\Roaming\Python\Python311\site-packages\torch\lib"
-    if os.path.exists(t_lib):
-        try:
-            os.add_dll_directory(t_lib)
-            for dll_name in ["c10.dll", "torch_cpu.dll", "shm.dll"]:
-                dll_p = os.path.join(t_lib, dll_name)
-                if os.path.exists(dll_p):
-                    try:
-                        ctypes.CDLL(dll_p)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-    for sp in site.getsitepackages() + [site.getusersitepackages()]:
-        torch_lib = Path(sp) / "torch" / "lib"
-        if torch_lib.exists():
-            try:
-                os.add_dll_directory(str(torch_lib))
-            except Exception:
-                pass
-        nvidia_path = Path(sp) / "nvidia"
-        if nvidia_path.exists():
-            for p in nvidia_path.rglob("bin"):
-                try:
-                    os.add_dll_directory(str(p))
-                except Exception:
-                    pass
+
+# Global cache for YOLO models to avoid reloading from disk on each image
+YOLO_MODEL_CACHE = {}
 
 import argparse
 import csv
@@ -285,29 +257,6 @@ def correct_wagon_number_combinatorial(raw_text):
                             if validate_wagon_number_checksum(candidate):
                                 reconstructed_candidates.append(candidate)
                         
-            if reconstructed_candidates:
-                return reconstructed_candidates[0], "reconstructed"
-
-    # 3. If still no match, try 9-digit mathematical reconstruction (2 missing digits)
-    candidates_9 = []
-    for i in range(len(digits_only) - 8):
-        candidates_9.append(digits_only[i : i + 9])
-        
-    if candidates_9:
-        for sub_9 in candidates_9:
-            reconstructed_candidates = []
-            for pos1 in range(10):
-                for pos2 in range(pos1 + 1, 11):
-                    for d1 in "0123456789":
-                        for d2 in "0123456789":
-                            temp = list(sub_9)
-                            temp.insert(pos1, d1)
-                            temp.insert(pos2, d2)
-                            candidate = "".join(temp)
-                            if len(candidate) == 11:
-                                if candidate[0:2] in CODE_TO_WAGON_TYPE and candidate[2:4] in ZONE_CODE_MAP:
-                                    if validate_wagon_number_checksum(candidate):
-                                        reconstructed_candidates.append(candidate)
             if reconstructed_candidates:
                 return reconstructed_candidates[0], "reconstructed"
 
@@ -771,8 +720,11 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 import torch
                 
                 device = "cuda" if torch.cuda.is_available() else "cpu"
-                print(f"Loading local YOLOv8 model on device: {device}...")
-                model = YOLO(str(local_model_path))
+                model_key = str(local_model_path.resolve())
+                if model_key not in YOLO_MODEL_CACHE:
+                    print(f"Loading local YOLOv8 model on device: {device}...")
+                    YOLO_MODEL_CACHE[model_key] = YOLO(str(local_model_path))
+                model = YOLO_MODEL_CACHE[model_key]
                 local_results = model.predict(str(image_path), device=device, verbose=False)
                 
                 if local_results and len(local_results) > 0:
@@ -1032,49 +984,6 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 except Exception as e:
                     print(f"Tier 3 PaddleOCR raw failed: {e}")
 
-            # Tier 3: EasyOCR on Raw Crop (if Tier 2 is unverified and EasyOCR is installed)
-            if not processed_text:
-                try:
-                    import easyocr
-                    import torch
-                    if not hasattr(run_pipeline, "easyocr_reader"):
-                        run_pipeline.easyocr_reader = easyocr.Reader(['en'], gpu=torch.cuda.is_available())
-                    
-                    easy_bgr = cv2.cvtColor(np.array(crop), cv2.COLOR_RGB2BGR)
-                    easy_res = run_pipeline.easyocr_reader.readtext(easy_bgr, detail=0)
-                    if easy_res:
-                        easy_raw = " ".join(easy_res)
-                        easy_processed = clean_text_class(easy_raw, cls_name)
-                        if check_field_verification(easy_processed):
-                            processed_text = easy_processed
-                            print(f"Tier 3 EasyOCR resolved field: {processed_text}")
-                        elif easy_processed and not clean_t1:
-                            clean_t1 = easy_processed
-                except Exception:
-                    pass # Skip if not installed
-
-            # Tier 4: Tesseract on Raw Crop (if Tier 3 is unverified and Tesseract is installed)
-            if not processed_text:
-                try:
-                    import pytesseract
-                    gray = cv2.cvtColor(cv2.cvtColor(np.array(crop), cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
-                    tess_config = ""
-                    if cls_name == "wagon_number":
-                        tess_config = "--psm 7 -c tessedit_char_whitelist=0123456789"
-                    elif cls_name in ["wagon_type", "owner_name", "zone_markings"]:
-                        tess_config = "--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                    
-                    tess_raw = pytesseract.image_to_string(gray, config=tess_config)
-                    if tess_raw:
-                        tess_processed = clean_text_class(tess_raw, cls_name)
-                        if check_field_verification(tess_processed):
-                            processed_text = tess_processed
-                            print(f"Tier 4 Tesseract resolved field: {processed_text}")
-                        elif tess_processed and not clean_t1:
-                            clean_t1 = tess_processed
-                except Exception:
-                    pass # Skip if not installed
-
             # Tier 4: Bounding Box Margin Expansion Fallback (+10% Single Pass)
             if not processed_text:
                 scale = 0.10
@@ -1169,9 +1078,12 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
             try:
                 from ultralytics import YOLO
                 import torch
-                print("Running Stencil Detection model...")
                 s_device = "cuda" if torch.cuda.is_available() else "cpu"
-                s_model = YOLO(str(stencil_model_path))
+                s_model_key = str(stencil_model_path.resolve())
+                if s_model_key not in YOLO_MODEL_CACHE:
+                    print("Loading Stencil Detection model...")
+                    YOLO_MODEL_CACHE[s_model_key] = YOLO(str(stencil_model_path))
+                s_model = YOLO_MODEL_CACHE[s_model_key]
                 s_results = s_model.predict(str(image_path), device=s_device, verbose=False, conf=0.5)
                 
                 if s_results and len(s_results) > 0 and len(s_results[0].boxes) > 0:

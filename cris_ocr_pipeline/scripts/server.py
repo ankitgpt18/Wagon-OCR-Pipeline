@@ -7,37 +7,6 @@ import datetime
 import site
 from pathlib import Path
 
-# CRITICAL: Pre-load PyTorch C++ DLLs on Windows using ctypes BEFORE cv2/numpy imports
-if os.name == "nt":
-    import ctypes
-    t_lib = r"C:\Users\ankit\AppData\Roaming\Python\Python311\site-packages\torch\lib"
-    if os.path.exists(t_lib):
-        try:
-            os.add_dll_directory(t_lib)
-            for dll_name in ["c10.dll", "torch_cpu.dll", "shm.dll"]:
-                dll_p = os.path.join(t_lib, dll_name)
-                if os.path.exists(dll_p):
-                    try:
-                        ctypes.CDLL(dll_p)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-    for sp in site.getsitepackages() + [site.getusersitepackages()]:
-        torch_lib = Path(sp) / "torch" / "lib"
-        if torch_lib.exists():
-            try:
-                os.add_dll_directory(str(torch_lib))
-            except Exception:
-                pass
-        nvidia_path = Path(sp) / "nvidia"
-        if nvidia_path.exists():
-            for p in nvidia_path.rglob("bin"):
-                try:
-                    os.add_dll_directory(str(p))
-                except Exception:
-                    pass
-
 from collections import Counter
 
 import cv2
@@ -57,8 +26,14 @@ from ocr_pipeline import (
 
 app = FastAPI(title="CRIS Wagon OCR Pipeline API")
 
-# Mount workspace folder for static image serving
-app.mount("/static", StaticFiles(directory="c:/Users/ankit/OneDrive/Desktop/cris2"), name="static")
+# Workspace root = two levels up from this file (scripts/ -> cris_ocr_pipeline/ -> root)
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+# Raw images must live in <workspace>/raw_images/ as per AGENTS.md
+RAW_IMAGES_DIR = WORKSPACE_ROOT / "raw_images"
+RAW_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Mount workspace root for static image serving
+app.mount("/static", StaticFiles(directory=str(WORKSPACE_ROOT)), name="static")
 
 # Enable CORS for React frontend communications
 app.add_middleware(
@@ -198,7 +173,7 @@ def draw_annotations(image_path, detections):
 # Cache file paths to avoid expensive recursive os.walk during requests
 print("Building fast file path index map...")
 FILE_PATH_INDEX = {}
-for root, dirs, files in os.walk("c:/Users/ankit/OneDrive/Desktop/cris2"):
+for root, dirs, files in os.walk(WORKSPACE_ROOT):
     # Skip outputs, node_modules, and git directories
     if any(k in root for k in ["outputs", "node_modules", ".git", ".gemini", ".agents"]):
         continue
@@ -233,7 +208,7 @@ def resolve_image_urls(record):
     elif image_name in FILE_PATH_INDEX:
         found_p = FILE_PATH_INDEX[image_name]
         src_found_path = found_p
-        rel_p = found_p.relative_to("c:/Users/ankit/OneDrive/Desktop/cris2")
+        rel_p = found_p.relative_to(WORKSPACE_ROOT)
         record["original_url"] = f"/static/{rel_p.as_posix()}"
     else:
         record["original_url"] = None
@@ -712,10 +687,10 @@ async def save_correction(req: CorrectionRequest):
         search_paths = [
             Path("cris_ocr_pipeline/outputs/scanned_images") / req.image_name,
             Path(req.image_name), # Root directory
-            Path("c:/Users/ankit/OneDrive/Desktop/cris2") / req.image_name,
+            RAW_IMAGES_DIR / req.image_name,
         ]
         
-        for root, dirs, files in os.walk("c:/Users/ankit/OneDrive/Desktop/cris2"):
+        for root, dirs, files in os.walk(WORKSPACE_ROOT):
             if req.image_name in files:
                 src_image_found = Path(root) / req.image_name
                 break
