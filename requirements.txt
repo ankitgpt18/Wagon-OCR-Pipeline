@@ -1,17 +1,22 @@
 # CRIS Wagon OCR Project Runtime Dependencies
 
-# Core Utilities
+# Core Utilities & String Metrics
 numpy>=1.24.0
 pillow>=10.0.0
 requests
 tqdm
 opencv-python>=4.0.0
+Levenshtein>=0.21.0
 
-# Detection & OCR Stack
+# Detection, VLM & OCR Stack
 ultralytics>=8.0.0
 paddleocr>=2.7.0
 paddlepaddle>=2.5.0
 easyocr>=1.7.2
+transformers>=4.48.0
+qwen-vl-utils
+accelerate
+bitsandbytes
 
 # FastAPI Web Server (start_server.py)
 fastapi>=0.100.0
