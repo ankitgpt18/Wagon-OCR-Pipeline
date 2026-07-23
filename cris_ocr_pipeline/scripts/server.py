@@ -87,6 +87,27 @@ except Exception as exc:
 
 
 class RemoteOCRClient:
+    def __init__(self):
+        self._local_engine = None
+
+    def _get_local_engine(self):
+        if self._local_engine is None:
+            try:
+                from paddleocr import PaddleOCR
+                os.environ["FLAGS_enable_pir_api"] = "0"
+                os.environ["FLAGS_use_mkldnn"] = "0"
+                self._local_engine = PaddleOCR(
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                    lang="en",
+                    use_gpu=False,
+                    enable_mkldnn=False
+                )
+            except Exception as e:
+                print(f"Local fallback PaddleOCR initialization failed: {e}")
+        return self._local_engine
+
     def ocr(self, img_np):
         try:
             _, img_encoded = cv2.imencode(".jpg", img_np)
@@ -100,7 +121,17 @@ class RemoteOCRClient:
                 lines = response.json().get("lines", [])
                 return [{"rec_texts": lines}]
         except Exception as e:
-            print(f"Remote GPU OCR request failed: {e}")
+            print(f"Remote GPU OCR request (Port 8001) failed: {e}. Executing local in-process fallback...")
+        
+        # In-process local fallback if Port 8001 is offline
+        try:
+            engine = self._get_local_engine()
+            if engine:
+                lines_res = engine.ocr(img_np)
+                return lines_res
+        except Exception as fallback_err:
+            print(f"In-process local PaddleOCR fallback failed: {fallback_err}")
+            
         return [None]
 
     def ocr_vlm(self, crop_pil, category):
@@ -118,7 +149,7 @@ class RemoteOCRClient:
             if response.status_code == 200:
                 return response.json().get("text", "").strip()
         except Exception as e:
-            print(f"Remote VLM OCR request failed: {e}")
+            print(f"Remote VLM OCR request (Port 8002) failed: {e}")
         return ""
 
 ocr_client = RemoteOCRClient()
