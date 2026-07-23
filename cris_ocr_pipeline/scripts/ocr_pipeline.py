@@ -48,6 +48,9 @@ import glob
 import json
 import re
 import time
+
+# Global cache for YOLO models to avoid reloading from disk on each image prediction
+YOLO_MODEL_CACHE = {}
 from itertools import product
 from pathlib import Path
 
@@ -771,8 +774,11 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 import torch
                 
                 device = "cuda" if torch.cuda.is_available() else "cpu"
-                print(f"Loading local YOLOv8 model on device: {device}...")
-                model = YOLO(str(local_model_path))
+                model_key = str(local_model_path.resolve())
+                if model_key not in YOLO_MODEL_CACHE:
+                    print(f"Loading local YOLOv8 model on device: {device}...")
+                    YOLO_MODEL_CACHE[model_key] = YOLO(str(local_model_path))
+                model = YOLO_MODEL_CACHE[model_key]
                 local_results = model.predict(str(image_path), device=device, verbose=False)
                 
                 if local_results and len(local_results) > 0:
@@ -1171,7 +1177,11 @@ def run_pipeline(image_path, rf_client=None, ocr_client=None, model_id=None):
                 import torch
                 print("Running Stencil Detection model...")
                 s_device = "cuda" if torch.cuda.is_available() else "cpu"
-                s_model = YOLO(str(stencil_model_path))
+                s_model_key = str(stencil_model_path.resolve())
+                if s_model_key not in YOLO_MODEL_CACHE:
+                    print("Loading Stencil Detection model...")
+                    YOLO_MODEL_CACHE[s_model_key] = YOLO(str(stencil_model_path))
+                s_model = YOLO_MODEL_CACHE[s_model_key]
                 s_results = s_model.predict(str(image_path), device=s_device, verbose=False, conf=0.5)
                 
                 if s_results and len(s_results) > 0 and len(s_results[0].boxes) > 0:

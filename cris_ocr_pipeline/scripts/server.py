@@ -57,8 +57,14 @@ from ocr_pipeline import (
 
 app = FastAPI(title="CRIS Wagon OCR Pipeline API")
 
+# Workspace root = two levels up from this file (scripts/ -> cris_ocr_pipeline/ -> root)
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+RAW_IMAGES_DIR = WORKSPACE_ROOT / "raw_images"
+RAW_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+SEARCH_ROOT = Path("c:/Users/ankit/OneDrive/Desktop/cris2") if os.path.exists("c:/Users/ankit/OneDrive/Desktop/cris2") else WORKSPACE_ROOT
+
 # Mount workspace folder for static image serving
-app.mount("/static", StaticFiles(directory="c:/Users/ankit/OneDrive/Desktop/cris2"), name="static")
+app.mount("/static", StaticFiles(directory=str(SEARCH_ROOT)), name="static")
 
 # Enable CORS for React frontend communications
 app.add_middleware(
@@ -198,7 +204,7 @@ def draw_annotations(image_path, detections):
 # Cache file paths to avoid expensive recursive os.walk during requests
 print("Building fast file path index map...")
 FILE_PATH_INDEX = {}
-for root, dirs, files in os.walk("c:/Users/ankit/OneDrive/Desktop/cris2"):
+for root, dirs, files in os.walk(str(SEARCH_ROOT)):
     # Skip outputs, node_modules, and git directories
     if any(k in root for k in ["outputs", "node_modules", ".git", ".gemini", ".agents"]):
         continue
@@ -233,7 +239,10 @@ def resolve_image_urls(record):
     elif image_name in FILE_PATH_INDEX:
         found_p = FILE_PATH_INDEX[image_name]
         src_found_path = found_p
-        rel_p = found_p.relative_to("c:/Users/ankit/OneDrive/Desktop/cris2")
+        try:
+            rel_p = found_p.relative_to(SEARCH_ROOT)
+        except Exception:
+            rel_p = found_p.relative_to(WORKSPACE_ROOT)
         record["original_url"] = f"/static/{rel_p.as_posix()}"
     else:
         record["original_url"] = None
