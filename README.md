@@ -1,49 +1,54 @@
-# CRIS Indian Railways Wagon OCR and Stencil Audit Pipeline
+# Wagon-OCR-Pipeline
 
-This codebase runs the production-grade Wagon OCR and safety stencil audit pipeline designed for Indian Railways (CRIS). It localizes and extracts wagon details like wagon number, type, owner, zone, and tare details from high-resolution raw images. It also checks if safety stencils are present.
+> **Multimodal VLM-Guided Parameter Extraction and Safety Compliance Auditing System for Indian Railways Freight Wagons**
 
-## Project Structure
+[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.5-EE4C2C?logo=pytorch)](https://pytorch.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
+[![YOLOv11](https://img.shields.io/badge/YOLOv11-Ultralytics-00FFFF?logo=ultralytics)](https://ultralytics.com)
+[![PaddleOCR](https://img.shields.io/badge/PaddleOCR-GPU-117D23)](https://github.com/PaddlePaddle/PaddleOCR)
+[![Qwen2.5-VL](https://img.shields.io/badge/Qwen2.5--VL-Vision--Language-6B46C1)](https://github.com/QwenLM/Qwen2.5-VL)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT)
 
-*   cris_ocr_pipeline/ - Backend files
-    *   scripts/ocr_pipeline.py - Core OCR pipeline with 5-tier fallback logic
-    *   scripts/ocr_service.py - GPU PaddleOCR microservice (runs on port 8001)
-    *   scripts/server.py - FastAPI server connecting frontend to backend (runs on port 8000)
-    *   models/ - Custom YOLO models (best.pt for parameters and stencil_best.pt for stencils)
-    *   config/pipeline_config.json - Master registry config for checksum validation
-*   frontend/ - Vite and React web app dashboard (runs on port 5173)
-*   yolov11m.ipynb - Kaggle notebook used to train the custom 5-class localization model
-*   raw_images/ - Empty folder for raw test images
-*   .agents/ - Context and rules for AI coding assistants
+Wagon-OCR-Pipeline is a production-grade Wagon OCR and Stencil audit pipeline designed for Indian Railways (CRIS). It localizes and extracts wagon details (11-digit wagon number, type, owner, zone, tare weight) from high-resolution raw images, performs cross-validation via S4 Mod-10 checksum validation and ROAMS master registries, and classifies maintenance stencil presence.
 
-## Quick Setup and Dependencies
+---
 
-Follow these steps to get everything running on your local machine:
+## ⚙️ System Architecture
 
-1. Install Python packages:
-   pip install -r requirements.txt
+1. **YOLOv11 Localization**: Localizes parameters across 5 classes (`wagon_number`, `wagon_type`, `owner_name`, `zone_markings`, `tare_load_details`).
+2. **Multi-Tier OCR Ensemble**:
+   - **Tier 1**: Qwen2.5-VL Vision-Language Model OCR on crops.
+   - **Tier 2**: PaddleOCR on preprocessed crops (deskewed + CLAHE contrast boosted).
+   - **Tier 3**: PaddleOCR on raw BGR bounding box crops.
+   - **Tier 4**: Bounding Box Margin Iteration (+10% adaptive expansion).
+   - **Tier 5**: Full Frame Scan fallback.
+3. **Checksum & ROAMS Master Validation**:
+   - Algorithmic S4 Mod-10 Checksum verification for 11-digit wagon numbers.
+   - Combinatorial Levenshtein distance correction against 209 ROAMS Master Wagon Types and 186 Zonal/Owner Registries.
+   - Physical boundary range checks ($10\text{--}45\text{T}$ tare, $40\text{--}100\text{T}$ CC) and missing decimal dot restoration.
+4. **Maintenance Safety Stencil Classification**: Custom-trained YOLOv11 stencil presence model.
 
-2. Configure Python Path:
-   We have added a .env file and .vscode/settings.json to configure PYTHONPATH automatically in VS Code. If you are using a standard command prompt outside VS Code, set it manually before running the scripts:
-   - Windows PowerShell: $env:PYTHONPATH=".;cris_ocr_pipeline/scripts"
-   - Windows CMD: set PYTHONPATH=.;cris_ocr_pipeline/scripts
-   - Linux/Mac Bash: export PYTHONPATH=".:cris_ocr_pipeline/scripts"
+---
 
-3. Put Test Images:
-   The massive 21k raw images folder has been cleared to keep the repository size small. Download the images from Google Drive and paste them directly into the "raw_images" folder in the project root.
+## 🚀 Getting Started
 
-## Running the Application
+### 1. Pre-warm GPU OCR Microservice
+```bash
+python cris_ocr_pipeline/scripts/ocr_service.py
+```
 
-To start the system, double-click the batch files at the root of the project:
+### 2. Start FastAPI Server
+```bash
+python start_server.py
+```
 
-1. Run setup.bat first:
-   This will install all required Python modules and frontend node packages with a single click.
+### 3. Launch React Dashboard UI
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-2. Run run_project.bat:
-   This will start the PaddleOCR service on port 8001, boot the FastAPI backend on port 8000, and launch the React frontend dashboard on port 5173. The dashboard will open in your browser automatically.
-
-## Collaboration Workflow
-
-To contribute code:
-1. Always create a new branch for your task (e.g. git checkout -b feature/your-task).
-2. Commit and push your changes to your branch, then create a Pull Request on GitHub.
-3. Keep raw images only in your local folder. Do not add them to git.
+Dashboard runs live at `http://localhost:5173`.
